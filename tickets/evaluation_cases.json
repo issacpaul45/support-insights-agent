@@ -1,0 +1,100 @@
+[
+  {
+    "id": "unresolved_total",
+    "question": "How many support tickets are unresolved? Give the exact count.",
+    "expected_tools": ["ticket_summary_tool"],
+    "check": "unresolved_count"
+  },
+  {
+    "id": "all_ticket_total",
+    "question": "How many tickets are in the support database? Give the exact count.",
+    "expected_tools": ["ticket_summary_tool"],
+    "check": "total_count"
+  },
+  {
+    "id": "payment_unresolved_count",
+    "question": "How many unresolved payment tickets do we have?",
+    "expected_tools": ["ticket_summary_tool"],
+    "check": "category_unresolved_count",
+    "category": "payment"
+  },
+  {
+    "id": "billing_total",
+    "question": "How many tickets are in the billing category?",
+    "expected_tools": ["ticket_summary_tool"],
+    "check": "category_total_count",
+    "category": "billing"
+  },
+  {
+    "id": "unresolved_category_ranking",
+    "question": "Which category has the most unresolved tickets? Compare all categories and mention ties.",
+    "expected_tools": ["ticket_summary_tool"],
+    "check": "category_ranking"
+  },
+  {
+    "id": "common_causes_all",
+    "question": "What are the three most common causes among unresolved support tickets? Include their counts.",
+    "expected_tools": ["common_causes_tool"],
+    "check": "common_causes",
+    "limit": 3
+  },
+  {
+    "id": "common_causes_payment",
+    "question": "What are the two most repeated unresolved payment issue titles, and how many tickets have each title?",
+    "expected_tools": ["common_causes_tool"],
+    "check": "common_causes",
+    "category": "payment",
+    "limit": 2
+  },
+  {
+    "id": "payment_count_and_causes",
+    "question": "How many payment tickets are unresolved, and what are the three most common repeated payment titles?",
+    "expected_tools": ["ticket_summary_tool", "common_causes_tool"],
+    "check": "category_count_and_causes",
+    "category": "payment",
+    "limit": 3
+  },
+  {
+    "id": "open_payment_examples",
+    "question": "Show five recent open payment tickets with their IDs and titles.",
+    "expected_tools": ["search_ticket_tool"],
+    "check": "ticket_search",
+    "category": "payment",
+    "status": "open",
+    "limit": 5
+  },
+  {
+    "id": "resolved_login_examples",
+    "question": "List up to three resolved login tickets and cite their IDs.",
+    "expected_tools": ["search_ticket_tool"],
+    "check": "ticket_search",
+    "category": "login",
+    "status": "resolved",
+    "limit": 3
+  },
+  {
+    "id": "common_causes_login",
+    "question": "What is the most repeated unresolved login issue? Include the count and an example ticket ID.",
+    "expected_tools": ["common_causes_tool"],
+    "check": "common_causes",
+    "category": "login",
+    "limit": 1
+  },
+  {
+    "id": "billing_count_and_causes",
+    "question": "Give me the number of unresolved billing tickets and the two most common repeated billing titles.",
+    "expected_tools": ["ticket_summary_tool", "common_causes_tool"],
+    "check": "category_count_and_causes",
+    "category": "billing",
+    "limit": 2
+  },
+  {
+    "id": "empty_open_other_search",
+    "question": "Are there any open tickets in the other category? If not, say there are none.",
+    "expected_tools": ["search_ticket_tool"],
+    "check": "empty_search",
+    "category": "other",
+    "status": "open",
+    "limit": 5
+  }
+]
