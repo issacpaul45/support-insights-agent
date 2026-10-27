@@ -1,6 +1,6 @@
 # Support Insights Agent
 
-A Django REST API and a local MCP server for querying synthetic support tickets, backed by PostgreSQL. The existing REST/OpenAI agent and the MCP server are separate entry points that share the same Django service layer.
+A Django REST API and a local MCP server for querying synthetic support tickets, backed by PostgreSQL. The OpenAI agent uses the MCP server for ticket lookups; both the MCP tools and REST endpoints share the same Django service layer.
 
 ## Run locally
 
@@ -33,13 +33,13 @@ The API is available at `http://127.0.0.1:8000/api/`. The agent accepts `POST /a
 
 ## MCP server
 
-[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is a standard way for AI hosts to discover and invoke tools exposed by a server. This project uses the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) to expose ticket operations over the real MCP protocol. This is separate from the OpenAI function-calling flow used by `POST /api/agent/`.
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is a standard way for AI hosts to discover and invoke tools exposed by a server. This project uses the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) to expose ticket operations over the real MCP protocol. The OpenAI agent at `POST /api/agent/` discovers these MCP tools, presents their schemas to the model, then forwards the model's selected calls to the local MCP server.
 
-The server uses local **stdio** transport: an MCP host starts it as a subprocess and exchanges MCP messages over standard input/output. The request path is:
+The server uses local **stdio** transport: an MCP host starts it as a subprocess and exchanges MCP messages over standard input/output. For agent requests, Django acts as the MCP host and starts the server for the duration of the request. The request path is:
 
-`MCP host → stdio MCP protocol → tickets/mcp_server.py (Django setup) → tickets/mcp_tools.py → tickets/services.py → Django ORM/PostgreSQL`
+`POST /api/agent/ → Django MCP client discovers tools → OpenAI selects a ticket tool → Django forwards the call over stdio MCP → tickets/mcp_server.py → tickets/mcp_tools.py → tickets/services.py → Django ORM/PostgreSQL`
 
-The REST API and its OpenAI agent keep running independently. The MCP tools reuse `tickets/services.py`; they do not add another database query implementation or call a model provider.
+The MCP tool definitions are discovered from the server at runtime and adapted to the OpenAI Responses API's strict function schema. Selected calls are forwarded over MCP, and structured results return to the model for its final answer. The agent preserves the existing REST response shape and `tools_used` names. These names are compatibility aliases for the corresponding MCP tools. The MCP server itself never calls a model provider.
 
 ### Install and start
 
@@ -53,7 +53,7 @@ python manage.py migrate
 python manage.py seed_tickets
 ```
 
-Configure `DJANGO_SECRET_KEY` and the `DB_*` variables in `.env` as described above. The MCP server needs those Django/database settings. It does not need `OPENAI_API_KEY`; that key is used by the existing REST agent only.
+Configure `DJANGO_SECRET_KEY` and the `DB_*` variables in `.env` as described above. The MCP server needs those Django/database settings. Django launches it automatically for `POST /api/agent/` and passes only the required Django/database settings to the subprocess; it does not pass `OPENAI_API_KEY` to the MCP server. `MCP_READ_TIMEOUT_SECONDS` controls the MCP client's read timeout and defaults to 15 seconds.
 
 An MCP client normally launches the server for you. To inspect it interactively with the official MCP Inspector, run this from the project root:
 
@@ -168,7 +168,7 @@ Run deterministic Django and MCP tests with:
 python manage.py test
 ```
 
-The suite checks tool discovery and schemas, service-backed results, validation, empty data, email redaction, safe failure responses, a real MCP SDK client over stdio, and the existing REST/OpenAI-agent paths. Tests do not call the paid model API.
+The suite checks tool discovery and schemas, service-backed results, validation, empty data, email redaction, safe failure responses, a real MCP SDK client over stdio, and the OpenAI agent forwarding model-selected tools through the stdio MCP server. Tests do not call the paid model API.
 
 The 13 natural-language cases in `tickets/evaluation_cases.json` define expected tool choices and database-grounded checks for counts, category rankings, repeated titles, cited IDs, and search behavior. To compare the live OpenAI agent against them, run:
 
@@ -247,6 +247,7 @@ For a question about individual tickets, the response includes the source IDs us
 
 - OpenAI's Responses API uses strict tool schemas and limits an answer to one tool-selection turn and one result turn.
 - Relevant tool calls can be selected together, so a question that needs both totals and common causes does not require serial tool-selection turns.
+- Category comparisons use one aggregate summary call; selected MCP calls run serially and are capped at eight per turn.
 - The OpenAI client and its HTTP connection pool are reused. Requests have a configurable timeout and one SDK retry for transient errors.
 - Ticket totals and grouped counts come from one grouped database query. Aggregate summaries do not fetch or cite example tickets. Recent-ticket queries use database indexes and only load fields needed by the agent.
 - Common-cause results include exact counts plus up to three real example ticket IDs per title. The API returns source IDs separately, appends representative verified IDs if the model omits citations, and rejects citations not returned by tools.
