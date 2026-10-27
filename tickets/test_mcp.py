@@ -33,6 +33,41 @@ async def _list_tools_and_call(server, name, arguments=None):
         return await client.call_tool(name, arguments or {})
 
 
+class FakeAgentMCPClient:
+    """Small MCP client fake that mirrors stdio's grouped exit errors."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        if exc is not None:
+            raise ExceptionGroup(
+                "stdio client shutdown failed",
+                [ExceptionGroup("session task failed", [exc])],
+            )
+        return False
+
+    async def list_tools(self):
+        return SimpleNamespace(tools=[])
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        return SimpleNamespace(
+            is_error=False,
+            structured_content={
+                "total_tickets": 4,
+                "unresolved_tickets": 3,
+                "by_status": [],
+                "by_category": [],
+                "unresolved_by_category": [],
+            },
+            content=[],
+        )
+
+
 class MCPToolTests(TransactionTestCase):
     reset_sequences = True
 
@@ -253,6 +288,83 @@ class MCPToolTests(TransactionTestCase):
         self.assertEqual(result["answer"], "There are 2 unresolved tickets.")
         self.assertEqual(result["tools_used"], ["ticket_summary_tool"])
         self.assertEqual(result["sources"], [])
+
+    def test_agent_accepts_more_calls_than_the_number_of_tool_definitions(self):
+        from tickets.agent import ask_agent
+
+        tool_calls = [
+            SimpleNamespace(
+                type="function_call",
+                name="ticket_summary_tool",
+                arguments='{"category":"payment"}',
+                call_id=f"call_{index}",
+            )
+            for index in range(4)
+        ]
+        selection = SimpleNamespace(output=tool_calls)
+        answer = SimpleNamespace(output_text="Payment has 3 unresolved tickets.", output=[])
+        fake_openai = SimpleNamespace(
+            responses=SimpleNamespace(create=Mock(side_effect=[selection, answer]))
+        )
+        fake_mcp = FakeAgentMCPClient()
+        declarations = [{"name": "ticket_summary_tool"}]
+        tool_schema = SimpleNamespace(
+            input_schema={"properties": {"category": {}}, "required": []}
+        )
+
+        with (
+            patch("tickets.agent._get_client", return_value=fake_openai),
+            patch("tickets.agent.Client", return_value=fake_mcp),
+            patch(
+                "tickets.agent._openai_tool_declarations",
+                return_value=(declarations, {"ticket_summary_tool": tool_schema}),
+            ),
+        ):
+            result = ask_agent("Compare unresolved tickets across categories.")
+
+        self.assertEqual(len(fake_mcp.calls), 4)
+        self.assertEqual(
+            result["tools_used"],
+            ["ticket_summary_tool"] * 4,
+        )
+
+    def test_excessive_tool_calls_keep_execution_error_type_when_stdio_wraps_it(self):
+        from tickets.agent import AgentExecutionError, MAX_AGENT_TOOL_CALLS, ask_agent
+
+        selection = SimpleNamespace(
+            output=[
+                SimpleNamespace(
+                    type="function_call",
+                    name="ticket_summary_tool",
+                    arguments='{"category":null}',
+                    call_id=f"call_{index}",
+                )
+                for index in range(MAX_AGENT_TOOL_CALLS + 1)
+            ]
+        )
+        fake_openai = SimpleNamespace(
+            responses=SimpleNamespace(create=Mock(return_value=selection))
+        )
+        fake_mcp = FakeAgentMCPClient()
+        tool_schema = SimpleNamespace(
+            input_schema={"properties": {"category": {}}, "required": []}
+        )
+
+        with (
+            patch("tickets.agent._get_client", return_value=fake_openai),
+            patch("tickets.agent.Client", return_value=fake_mcp),
+            patch(
+                "tickets.agent._openai_tool_declarations",
+                return_value=(
+                    [{"name": "ticket_summary_tool"}],
+                    {"ticket_summary_tool": tool_schema},
+                ),
+            ),
+            self.assertRaises(AgentExecutionError),
+        ):
+            ask_agent("Compare every category and list common causes.")
+
+        self.assertEqual(fake_mcp.calls, [])
 
     def test_evaluation_suite_is_repeatable_and_checks_counts_and_sources(self):
         cases = load_evaluation_cases()

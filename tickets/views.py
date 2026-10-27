@@ -16,6 +16,7 @@ from .serializers import AgentQuestionSerializer, TicketSerializer
 from .services import get_common_unresolved_causes, get_ticket_summary
 from .agent import (
     AgentConfigurationError,
+    AgentDependencyError,
     AgentExecutionError,
     ask_agent,
 )
@@ -102,7 +103,13 @@ class AgentView(APIView):
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        except (APIConnectionError, APITimeoutError, RateLimitError, DatabaseError):
+        except (
+            APIConnectionError,
+            APITimeoutError,
+            RateLimitError,
+            DatabaseError,
+            AgentDependencyError,
+        ):
             logger.exception("Support insights agent dependency failed")
             return Response(
                 {
