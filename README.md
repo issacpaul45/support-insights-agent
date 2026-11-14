@@ -180,6 +180,19 @@ This opt-in command makes up to 13 live agent evaluations (normally two Response
 
 The evaluation checks are heuristic because the agent returns natural language. Review failed case output and the underlying tool data before treating a score as a production guarantee.
 
+Example live run:
+
+```text
+Cases:             13 defined, 12 attempted, 1 skipped
+Passed / failed:   12 passed, 0 failed
+Request failures:  0
+Quality failures:  0
+Latency:           median 5,622 ms; p95 / max 17,881 ms
+Latency budget:    30,000 ms
+```
+
+The skipped `empty_open_other_search` case requires no matching tickets, but the evaluation database contained matching tickets. All 12 attempted cases passed. Latency includes the live agent requests; individual MCP tool calls in this run took about 5–51 ms.
+
 ## Postman requests and example responses
 
 Import `postman/Support Insights Agent.postman_collection.json` into Postman, start the Django server, then send a request to `POST {{baseUrl}}/api/agent/`. The collection sets `baseUrl` to `http://127.0.0.1:8000`; use `Content-Type: application/json` and put the request body in **Body → raw → JSON**. The OpenAI API key stays in the server's `.env` file and is not sent from Postman.
